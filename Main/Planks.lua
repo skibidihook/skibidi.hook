@@ -1624,4 +1624,4 @@ ThemeManager:ApplyToTab(Tabs.UISettings)
 cache_original_weapon_values()
 apply_weapon_configurations()
 apply_weapon_canshoot()
-SaveManager:LoadAutoloadConfig()
+SaveManager:LoadAutoloadConfig() -- test
