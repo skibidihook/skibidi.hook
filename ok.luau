@@ -36,7 +36,7 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(60)
+		task.wait(5)
 		if isitdisable() then
 			disableit()
 			break
