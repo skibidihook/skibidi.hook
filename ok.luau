@@ -1225,8 +1225,8 @@ ZoomToggle:AddKeyPicker("ZoomKey", {
 ArmChamsGroupbox:AddSlider("ZoomFOV", {
     Text = "Zoom FOV",
     Default = zoom_fov,
-    Min = 10,
-    Max = 100,
+    Min = 5,
+    Max = 120,
     Rounding = 0,
     Callback = function(v)
         zoom_fov = v
