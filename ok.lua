@@ -1,3 +1,5 @@
+setfpscap(0)
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local Stats = game:GetService("Stats")
