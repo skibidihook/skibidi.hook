@@ -185,6 +185,22 @@ local SelectTarget = function(dt, ping)
     return BestTarget
 end
 
+local GenerateHeadOffsets = function(radius)
+    local offsets = {}
+    for dx = -radius, radius, radius/2 do
+        for dy = -radius, radius, radius/2 do
+            for dz = -radius, radius, radius/2 do
+                local v = Vector3.new(dx, dy, dz)
+                if v.Magnitude <= radius and v.Magnitude > 0 then
+                    table.insert(offsets, v)
+                end
+            end
+        end
+    end
+    return offsets
+end
+local HeadOffsets = GenerateHeadOffsets(4)
+
 local ShootTarget = function(Target)
     if not Target then return end
     local Character = LocalPlayer.Character
@@ -196,12 +212,23 @@ local ShootTarget = function(Target)
     local Remotes = Tool:FindFirstChild("Remotes")
     local FireShot = Remotes and Remotes:FindFirstChild("FireShot")
     if not FireShot then return end
-    local Origin = MyHead.Position
-    local Direction = (Target.WorldPos - Origin).Unit
     local Now = tick()
     if Now - LastShot < ShootDelay then return end
+
+    local bestOrigin = MyHead.Position
+    local found = false
+    for _, offset in ipairs(HeadOffsets) do
+        local tryOrigin = MyHead.Position + offset
+        if StrictWallCheck(tryOrigin, Target.WorldPos, Character, Target.Character) then
+            bestOrigin = tryOrigin
+            found = true
+            break
+        end
+    end
+    local Direction = (Target.WorldPos - bestOrigin).Unit
+
     local Success = pcall(function()
-        FireShot:FireServer(Origin, Direction, Target.Part)
+        FireShot:FireServer(bestOrigin, Direction, Target.Part)
     end)
     if Success then LastShot = Now end
 end
@@ -242,10 +269,45 @@ local Tabs = {
 local RageMain = Tabs.Combat:AddLeftGroupbox('Ragebot')
 RageMain:AddToggle('RageEnabled', {Text='Master Toggle',Default=RagebotEnabled}):OnChanged(function(val) RagebotEnabled=val end)
 RageMain:AddToggle('AutoShoot', {Text='Auto Shoot',Default=AutoshootEnabled}):OnChanged(function(val) AutoshootEnabled=val end)
-RageMain:AddSlider('ShootDelay', {Text='Shoot Delay',Default=ShootDelay,Min=0.05,Max=1.0, Rounding=2}):OnChanged(function(val) ShootDelay=val end)
+RageMain:AddSlider('ShootDelay', {Text='Shoot Delay',Default=ShootDelay,Min=0.01,Max=1.0, Rounding=2}):OnChanged(function(val) ShootDelay=val end)
 RageMain:AddSlider('FOV', {Text='FOV',Default=FOV,Min=25,Max=360,Rounding=0}):OnChanged(function(val) FOV=val end)
 RageMain:AddSlider('Hitchance', {Text='Hitchance (%)',Default=Hitchance,Min=1,Max=100,Rounding=0}):OnChanged(function(val) Hitchance=val end)
-RageMain:AddSlider('MinDamage', {Text='MinDamage',Default=MinDamage,Min=0,Max=80,Rounding=0}):OnChanged(function(val) MinDamage=val end)
+RageMain:AddSlider('MinDamage', {Text='MinDamage',Default=MinDamage,Min=1,Max=80,Rounding=0}):OnChanged(function(val) MinDamage=val end)
+
+local MenuGroupbox = Tabs.UISettings:AddLeftGroupbox('Menu')
+MenuGroupbox:AddButton('Unload UI', function()
+	Library:Unload()
+end)
+MenuGroupbox:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
+	Default = 'RightShift',
+	NoUI = true,
+	Text = 'Menu keybind'
+})
+Library.ToggleKeybind = Options.MenuKeybind
+Options.MenuKeybind:OnChanged(function()
+    Library.ToggleKeybind = Options.MenuKeybind
+end)
+MenuGroupbox:AddToggle('KeybindMenu', {
+	Text = 'Keybind Menu',
+	Default = true,
+	Tooltip = 'Shows Keybinds',
+	Callback = function(value)
+		Library.KeybindFrame.Visible = value
+	end
+})
+MenuGroupbox:AddDropdown('KeybindMenuValue', {
+	Values = {
+		'Active',
+		'Toggled',
+		'All'
+	},
+	Default = 3,
+	Multi = false,
+	Text = 'Keybind Menu Mode',
+	Callback = function(value)
+		Library.KeypickerListMode = value
+	end
+})
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
