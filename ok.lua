@@ -1,8 +1,9 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local Stats = game:GetService("Stats")
+local RunService = game:GetService('RunService')
 local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local Stats = game:GetService("Stats")
 
 local RagebotEnabled, AutoshootEnabled = true, true
 local ShootDelay, FOV, MinDamage, Hitchance = 0.1, 360, 0, 100
@@ -314,4 +315,20 @@ SaveManager:SetLibrary(Library)
 ThemeManager:ApplyToTab(Tabs.UISettings)
 SaveManager:BuildConfigSection(Tabs.UISettings)
 Library:SetWatermarkVisibility(true)
-Library:SetWatermark('skibidi.hook | Mirage HvH')
+local FrameTimer = tick()
+local FrameCounter = 0;
+local FPS = 60;
+RunService.RenderStepped:Connect(function()
+    FrameCounter += 1;
+
+    if (tick() - FrameTimer) >= 1 then
+        FPS = FrameCounter;
+        FrameTimer = tick();
+        FrameCounter = 0;
+    end;
+
+    Library:SetWatermark(('skibidi.hook | %s fps | %s ms'):format(
+        math.floor(FPS),
+        math.floor(Stats.Network.ServerStatsItem['Data Ping']:GetValue())
+    ));
+end);
