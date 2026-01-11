@@ -491,12 +491,12 @@ local PeekToggle = AutomationGB:AddToggle('PeekAssist', {
     Default = false,
 })
 
-:AddKeyPicker('PeekKey', {
+:AddKeyPicker('Peek Assist Key', {
     Default = 'X',
     SyncToggleState = false,
     Mode = 'Hold',
     NoUI = false,
-    Text = 'Peek Key',
+    Text = 'Peek Assist',
     Callback = function(active)
         if not Toggles.PeekAssist.Value then return end
 
