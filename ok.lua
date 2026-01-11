@@ -7,390 +7,562 @@ else
 end
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Stats = game:GetService("Stats")
-local RunService = game:GetService("RunService")
+
 local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-    Camera = Workspace.CurrentCamera
-end)
-
-local v3 = Vector3.new
-local floor = math.floor
-local clamp = math.clamp
-local exp = math.exp
-local max = math.max
-local min = math.min
-local ipairs_ = ipairs
-local CFrame_new = CFrame.new
-local CFrame_Angles = CFrame.Angles
-local rad = math.rad
-
-local RagebotEnabled, AutoshootEnabled = true, true
-local ShootDelay, MinDamage, Hitchance = 0.0, 0, 100
-local TargetHitboxes = { "Head", "UpperTorso", "HumanoidRootPart" }
-local LastShot = 0
-
-local HitboxMultipliers = {
-    Head = 4, UpperTorso = 1, LowerTorso = 1, Torso = 1, HumanoidRootPart = 1,
-    LeftUpperArm = 0.75, LeftLowerArm = 0.75, LeftHand = 0.75,
-    RightUpperArm = 0.75, RightLowerArm = 0.75, RightHand = 0.75,
-    LeftUpperLeg = 0.6, LeftLowerLeg = 0.6, LeftFoot = 0.6,
-    RightUpperLeg = 0.6, RightLowerLeg = 0.6, RightFoot = 0.6
+local Settings = {
+    Ragebot = true,
+    Manipulation = true,
+    ManipulationRange = 2,
+    Prediction = true,
+    Fov = 360,
+    MinDamage = 80,
+    HitChance = 100,
+    BAim = false,
+    PrioritizeHead = true,
+    PrioritizeLegs = false,
+    BodyParts = {
+        Head = 4,
+        UpperTorso = 1,
+        LowerTorso = 1,
+        ["LeftUpperLeg"] = 0.6,
+        ["RightUpperLeg"] = 0.6,
+        HumanoidRootPart = 1
+    }
 }
-local RandomGen = Random.new()
 
-local CharIgnoreCache = setmetatable({}, { __mode = "k" })
-local skibidi_cached_flags = setmetatable({}, { __mode = "k" })
+local Peek = {
+    Marker = nil,
+    Position = nil,
+    MaxDistance = 15,
+    Storing = true,
+}
 
-local function CacheCharacterParts(Char)
-    if not Char then return end
-    local t = { Char }
-    for _, v in ipairs(Char:GetDescendants()) do
-        if v:IsA("BasePart") then t[#t + 1] = v end
-    end
-    CharIgnoreCache[Char] = t
 
-    if not skibidi_cached_flags[Char] then
-        Char.DescendantAdded:Connect(function(obj)
-            if obj:IsA("BasePart") then
-                t[#t + 1] = obj
-            end
-        end)
-        Char.DescendantRemoving:Connect(function(obj)
-            for i = #t, 1, -1 do
-                if t[i] == obj then table.remove(t, i) end
-            end
-        end)
-        Char.AncestryChanged:Connect(function()
-            CharIgnoreCache[Char] = nil
-        end)
-        skibidi_cached_flags[Char] = true
-    end
+local Rand = Random.new()
+
+local Offsets = {
+    Vector3.new(0, 0.3, 0),
+    Vector3.new(0, -0.3, 0),
+    Vector3.new(0.3, 0, 0),
+    Vector3.new(-0.3, 0, 0),
+    Vector3.new(0, 0, 0.3),
+    Vector3.new(0, 0, -0.3),
+}
+
+local RayParams = RaycastParams.new()
+RayParams.FilterType = Enum.RaycastFilterType.Exclude
+RayParams.IgnoreWater = true
+
+local RayIgnore = table.create(1)
+
+local function GetToolComponents()
+    local Character = LocalPlayer.Character
+    if not Character then return end
+
+    local Tool = Character:FindFirstChildOfClass("Tool")
+    if not Tool then return end
+
+    local Remotes = Tool:FindFirstChild("Remotes")
+    if not Remotes then return end
+    return {
+        Tool = Tool,
+        FireShot = Remotes:FindFirstChild("FireShot"),
+        Reload = Remotes:FindFirstChild("Reload"),
+        Handle = Tool:FindFirstChild("Handle")
+    }
 end
 
-for _, plr in ipairs_(Players:GetPlayers()) do
-    plr.CharacterAdded:Connect(CacheCharacterParts)
-    if plr.Character then CacheCharacterParts(plr.Character) end
-end
-Players.PlayerAdded:Connect(function(plr)
-    plr.CharacterAdded:Connect(CacheCharacterParts)
-end)
-
-local MAX_PIERCES = 8
-local RAYCAST_BUDGET_PER_FRAME = 1000 
-local raycastBudgetUsed = 0
-
-local rayParamsCache = setmetatable({}, { __mode = "k" }) 
-
-local function GetRayParamsForPair(Shooter, Target)
-    local shooterMap = rayParamsCache[Shooter]
-    if not shooterMap then
-        shooterMap = setmetatable({}, { __mode = "k" })
-        rayParamsCache[Shooter] = shooterMap
-    end
-    local rp = shooterMap[Target]
-    if rp then return rp end
-
-    local shooterCache = CharIgnoreCache[Shooter] or {}
-    local targetCache = CharIgnoreCache[Target] or {}
-    local combined = table.create(#shooterCache + #targetCache)
-    for i = 1, #shooterCache do combined[#combined + 1] = shooterCache[i] end
-    for i = 1, #targetCache do combined[#combined + 1] = targetCache[i] end
-
-    rp = RaycastParams.new()
-    rp.FilterType = Enum.RaycastFilterType.Exclude
-    rp.IgnoreWater = true
-    rp.FilterDescendantsInstances = combined
-    shooterMap[Target] = rp
-    return rp
-end
-
-local function ResetRaycastBudget() raycastBudgetUsed = 0 end
-RunService.Heartbeat:Connect(ResetRaycastBudget)
-
-local function CanUseRaycast(n) return raycastBudgetUsed + (n or 1) <= RAYCAST_BUDGET_PER_FRAME end
-local function CountRaycast(n) raycastBudgetUsed += (n or 1) end
-
-local function StrictWallCheckParams(From, To, rp, Target)
-    if not From or not To then return false end
-    local Dir = To - From
-    local Dist = Dir.Magnitude
-    if Dist < 0.1 or Dist > 1000 then return false end
-    Dir = Dir.Unit
-
-    local curFrom = From
-    for _ = 1, MAX_PIERCES do
-        if not CanUseRaycast(1) then return false end
-        local DirVec = To - curFrom
-        if DirVec.Magnitude < 0.1 then return true end
-
-        CountRaycast(1)
-        local hit = Workspace:Raycast(curFrom, DirVec, rp)
-        if not hit then return true end
-        local inst = hit.Instance
-        if inst and Target and inst:IsDescendantOf(Target) then
-            return true
-        end
-        if inst and inst:IsA("BasePart") then
-            if inst.Transparency > 0.2 or not inst.CanCollide then
-                curFrom = hit.Position + Dir * 0.1
-            else
-                return false
-            end
-        else
-            return true
-        end
-    end
+local function CanPenetrate(Part)
+    if not Part or not Part:IsA("BasePart") then return false end
+    if Part.Transparency > 0.2 or not Part.CanCollide then return true end
+    if Part:IsA("Decal") or Part:IsA("ParticleEmitter") or Part:IsA("Beam") or Part:IsA("Trail") then return true end
     return false
 end
 
-local MULTI_OFFSETS_PRIORITY = {
-    v3(0, 0.3, 0), v3(0, -0.15, 0),
-    v3(0.2, 0.1, 0), v3(-0.2, 0.1, 0),
-    v3(0, 0, 0.2)
-}
-local MULTI_OFFSETS_LIGHT = {
-    v3(0, 0.3, 0), v3(0.2, 0, 0), v3(-0.2, 0, 0), v3(0, 0, 0.2)
-}
+local function IsCharacterPart(Part)
+    if not Part or not Part:IsA("BasePart") then return false end
+    local P = Part.Parent
+    if not P then return false end
+    if P:FindFirstChild("Humanoid") then return true end
+    if P:IsA("Accessory") or P:IsA("Hat") then return true end
+    return false
+end
 
-local function MultiPointWallCheck(From, To, Shooter, Target)
-    if not CanUseRaycast(1) then return false end
-    local rp = GetRayParamsForPair(Shooter, Target)
-    if StrictWallCheckParams(From, To, rp, Target) then
+local function Prediction(part, ping, dt)
+    local par = part.Parent
+    local hrp = par and par:FindFirstChild("HumanoidRootPart")
+    local old = hrp and hrp:FindFirstChild("OldPosition")
+    if not (hrp and old) then
+        return part.Position
+    end
+
+    dt = math.max(dt or 0, 1/240)
+
+    local pingSeconds = ping or 0
+    if pingSeconds > 1 then
+        pingSeconds = pingSeconds / 1000
+    end
+    pingSeconds = math.clamp(pingSeconds, 0, 0.35)
+
+    local hPos = hrp.Position
+    local oldPos = old.Value
+
+    local vel = (hPos - oldPos) / dt
+    if vel.Magnitude < 0.1 then
+        return part.Position
+    end
+    local yScale = 0.6
+    vel = Vector3.new(vel.X, vel.Y * yScale, vel.Z)
+
+    return part.Position + vel * pingSeconds
+end
+
+local function CheckMinDamage(Part, Distance)
+    local Base = 54 * (Settings.BodyParts[Part.Name] or 0.5)
+    if Distance > 300 then Base = Base * 0.3
+    elseif Distance > 200 then Base = Base * 0.5
+    elseif Distance > 100 then Base = Base * 0.8 end
+    return math.floor(Base) >= Settings.MinDamage
+end
+
+local function CheckHitChance()
+    local Hc = Settings.HitChance
+    if Hc >= 100 then return true end
+    if Hc <= 0 then return false end
+    return Rand:NextInteger(1, 100) <= Hc
+end
+
+local function StrictWallCheck(StartPos, EndPos, MyChar, TargetChar)
+    if not (StartPos and EndPos and MyChar and TargetChar) then
+        return false
+    end
+
+    RayIgnore[1] = MyChar
+    RayParams.FilterDescendantsInstances = RayIgnore
+
+    local CurStart = StartPos
+    local MaxHops = 8
+
+    for _ = 1, MaxHops do
+        local Dir = EndPos - CurStart
+        local Mag = Dir.Magnitude
+        if Mag < 0.1 then
+            return true
+        end
+        if Mag > 1000 then
+            return false
+        end
+
+        local Hit = Workspace:Raycast(CurStart, Dir, RayParams)
+        if not Hit then
+            return true
+        end
+
+        local Inst = Hit.Instance
+        if Inst and Inst:IsDescendantOf(TargetChar) then
+            return true
+        end
+
+        if CanPenetrate(Inst) or IsCharacterPart(Inst) then
+            CurStart = Hit.Position + Dir.Unit * 0.1
+        else
+            return false
+        end
+    end
+
+    return false
+end
+
+local function MultiPointWallCheck(StartPos, EndPos, MyChar, TargetChar)
+    if not (StartPos and EndPos and MyChar and TargetChar) then
+        return false
+    end
+
+    if StrictWallCheck(StartPos, EndPos, MyChar, TargetChar) then
         return true
     end
 
-    local distance = (To - From).Magnitude
-    local scaleFactor = distance > 120 and 0.55 or (distance < 30 and 1.35 or 1.0)
-    local offsets = (distance > 80) and MULTI_OFFSETS_LIGHT or MULTI_OFFSETS_PRIORITY
-
-    for i = 1, #offsets do
-        if not CanUseRaycast(1) then break end
-        local o = offsets[i] * scaleFactor
-        if StrictWallCheckParams(From, To + o, rp, Target) then
+    for i = 1, #Offsets do
+        if StrictWallCheck(StartPos, EndPos + Offsets[i], MyChar, TargetChar) then
             return true
         end
     end
+
     return false
 end
 
-local function CalculateDamage(Part, Distance)
-    local Value = 54 * (HitboxMultipliers[Part.Name] or 0.5)
-    if Distance > 300 then Value *= 0.3
-    elseif Distance > 200 then Value *= 0.5
-    elseif Distance > 100 then Value *= 0.8
-    end
-    return floor(Value)
-end
+local function GetBestTarget(Ping, Dt)
+    local MyChar = LocalPlayer.Character
+    if not MyChar then return nil end
 
-local function PassesHitchance()
-    if Hitchance >= 100 then return true end
-    if Hitchance <= 0 then return false end
-    return RandomGen:NextInteger(1, 100) <= Hitchance
-end
+    local MyHead = MyChar:FindFirstChild("Head")
+    if not MyHead then return nil end
+    local MyHeadPos = MyHead.Position
 
-local velCache = setmetatable({}, { __mode = "k" })
-local function RageBotPrediction(TargetPart, pingMs, dt)
-    if not TargetPart then return Vector3.zero end
-    local par = TargetPart.Parent
-    local hrp = par and par:FindFirstChild("HumanoidRootPart")
-    if not hrp then return TargetPart.Position end
+    local Cam = Camera
+    local CamPos = Cam.CFrame.Position
+    local Vp = Cam.ViewportSize
+    local Cx, Cy = Vp.X * 0.5, Vp.Y * 0.5
 
-    local oldPosObj = hrp:FindFirstChild("OldPosition")
-    if not oldPosObj then return TargetPart.Position end
+    local Fov = Settings.Fov
+    local DoFov = Fov < 360
+    local Fov2 = Fov * Fov
 
-    dt = max(dt or 0, 1 / 240)
-    local pNow, pPrev = hrp.Position, oldPosObj.Value
-    local vRaw = (pNow - pPrev) / dt
+    local DoPred = Settings.Prediction
+    local DoHead = Settings.PrioritizeHead
+    local DoTorso = Settings.BAim
+    local DoLegs = Settings.PrioritizeLegs
 
-    local st = velCache[hrp]
-    if not st then
-        st = { v = vRaw, lastV = vRaw }
-        velCache[hrp] = st
-    end
+    local BestPart, BestPlayer, BestScore = nil, nil, math.huge
 
-    local resp = 22
-    local alpha = 1 - exp(-resp * dt)
-    local vSmoothed = st.v:Lerp(vRaw, alpha)
-    local a = (vSmoothed - st.lastV) / dt
-    st.lastV, st.v = vSmoothed, vSmoothed
+    local LpTeam = LocalPlayer.Team
 
-    local pingSec = (pingMs or 0) * 0.001
-    local t = min(max(pingSec * 0.5 + 0.045, 0), 0.35)
-    local accelMax = 180
-    if a.Magnitude > accelMax then a = a.Unit * accelMax end
+    for _, TargPlr in ipairs(Players:GetPlayers()) do
+        if TargPlr ~= LocalPlayer then
+            local TargTeam = TargPlr.Team
+            if LpTeam and TargTeam and TargTeam == LpTeam then
+                continue
+            end
 
-    return TargetPart.Position + (vSmoothed * t) + (a * (0.5 * t * t))
-end
+            local Char = TargPlr.Character
+            if not Char then
+                continue
+            end
 
-local function SelectTarget(dt, ping)
-    local Character = LocalPlayer.Character
-    if not Character then return end
-    local MyHead = Character:FindFirstChild("Head")
-    local Humanoid = Character:FindFirstChild("Humanoid")
-    if not (Humanoid and MyHead and Humanoid.Health > 0) then return end
+            local Hum = Char:FindFirstChild("Humanoid")
+            if not Hum or Hum.Health <= 0 then
+                continue
+            end
 
-    local camPos = (Camera and Camera.CFrame and Camera.CFrame.Position) or MyHead.Position
-    local best, bestScore = nil, math.huge
+            local Root = Char:FindFirstChild("HumanoidRootPart")
+            if not Root then
+                continue
+            end
 
-    for _, Player in ipairs_(Players:GetPlayers()) do
-        if Player ~= LocalPlayer and Player.Team and LocalPlayer.Team and Player.Team ~= LocalPlayer.Team then
-            local TargetCharacter = Player.Character
-            if TargetCharacter then
-                local h = TargetCharacter:FindFirstChild("Humanoid")
-                local hrp = TargetCharacter:FindFirstChild("HumanoidRootPart")
-                if h and hrp and h.Health > 0 then
-                    for _, Hitbox in ipairs_(TargetHitboxes) do
-                        local Part = TargetCharacter:FindFirstChild(Hitbox)
-                        if not Part then continue end
-                        local PredictedPos = RageBotPrediction(Part, ping, dt)
-                        local dist = (PredictedPos - camPos).Magnitude
-                        local Damage = CalculateDamage(Part, dist)
-                        if Damage < MinDamage then continue end
-                        local score = dist - (Damage * 0.25)
-                        if PassesHitchance() and score < bestScore then
-                            bestScore = score
-                            best = {
-                                Part = Part,
-                                Player = Player,
-                                Character = TargetCharacter,
-                                WorldPos = PredictedPos,
-                                Root = hrp
-                            }
+            local RootPos = Root.Position
+            local Distance = (RootPos - CamPos).Magnitude
+
+            local Head = DoHead and Char:FindFirstChild("Head") or nil
+            local Torso = nil
+            if DoTorso then
+                Torso = Char:FindFirstChild("Torso") or Char:FindFirstChild("UpperTorso")
+            end
+            local Leg = nil
+            if DoLegs then
+                Leg = Char:FindFirstChild("LeftUpperLeg") or Char:FindFirstChild("RightUpperLeg")
+            end
+            if Head then
+                local PartPos = DoPred and Prediction(Head, Ping, Dt) or Head.Position
+                local View, OnScreen = Cam:WorldToViewportPoint(PartPos)
+                if OnScreen then
+                    local Dx, Dy = View.X - Cx, View.Y - Cy
+                    if (not DoFov) or (Dx*Dx + Dy*Dy <= Fov2) then
+                        if MultiPointWallCheck(MyHeadPos, PartPos, MyChar, Char) and CheckMinDamage(Head, Distance) then
+                            local Score = (Dx*Dx + Dy*Dy) * 1
+                            if Score < BestScore then
+                                BestScore = Score
+                                BestPlayer = TargPlr
+                                BestPart = Head
+                            end
+                        end
+                    end
+                end
+            end
+            if Torso then
+                local PartPos = DoPred and Prediction(Torso, Ping, Dt) or Torso.Position
+                local View, OnScreen = Cam:WorldToViewportPoint(PartPos)
+                if OnScreen then
+                    local Dx, Dy = View.X - Cx, View.Y - Cy
+                    if (not DoFov) or (Dx*Dx + Dy*Dy <= Fov2) then
+                        if MultiPointWallCheck(MyHeadPos, PartPos, MyChar, Char) and CheckMinDamage(Torso, Distance) then
+                            local Score = (Dx*Dx + Dy*Dy) * 2
+                            if Score < BestScore then
+                                BestScore = Score
+                                BestPlayer = TargPlr
+                                BestPart = Torso
+                            end
+                        end
+                    end
+                end
+            end
+            if Leg then
+                local PartPos = DoPred and Prediction(Leg, Ping, Dt) or Leg.Position
+                local View, OnScreen = Cam:WorldToViewportPoint(PartPos)
+                if OnScreen then
+                    local Dx, Dy = View.X - Cx, View.Y - Cy
+                    if (not DoFov) or (Dx*Dx + Dy*Dy <= Fov2) then
+                        if MultiPointWallCheck(MyHeadPos, PartPos, MyChar, Char) and CheckMinDamage(Leg, Distance) then
+                            local Score = (Dx*Dx + Dy*Dy) * 3
+                            if Score < BestScore then
+                                BestScore = Score
+                                BestPlayer = TargPlr
+                                BestPart = Leg
+                            end
+                        end
+                    end
+                end
+            end
+            do
+                local PartPos = DoPred and Prediction(Root, Ping, Dt) or RootPos
+                local View, OnScreen = Cam:WorldToViewportPoint(PartPos)
+                if OnScreen then
+                    local Dx, Dy = View.X - Cx, View.Y - Cy
+                    if (not DoFov) or (Dx*Dx + Dy*Dy <= Fov2) then
+                        if MultiPointWallCheck(MyHeadPos, PartPos, MyChar, Char) and CheckMinDamage(Root, Distance) then
+                            local Score = (Dx*Dx + Dy*Dy) * 4
+                            if Score < BestScore then
+                                BestScore = Score
+                                BestPlayer = TargPlr
+                                BestPart = Root
+                            end
                         end
                     end
                 end
             end
         end
     end
-    if best then
-        local ok = MultiPointWallCheck(MyHead.Position, best.WorldPos, Character, best.Character)
-        if ok then return best end
-    end
-    return nil
+
+    return BestPlayer, BestPart
 end
 
-local ORIGIN_RADIUS = 5
-local TAU = math.pi * 2
-local GOLDEN = 2.39996322972865332
+local vectors = {
+    Vector3.zero, -- none
+    Vector3.new(1, 0, 0), -- big right
+    Vector3.new(-1, 0, 0), -- big left
+    Vector3.new(0, 0, 1), -- big forward
+    Vector3.new(0, 0, -1), -- big backward
+    Vector3.new(0, 1, 0), -- big up
+    Vector3.new(0, -1, 0), -- big down
+    
+    Vector3.new(1 / 2, 0, 0), -- small right
+    Vector3.new(-1 / 2, 0, 0), -- small left
+    Vector3.new(0, 0, 1 / 2), -- small forward
+    Vector3.new(0, 0, -1 / 2), -- small backward
+    Vector3.new(0, 1 / 2, 0), -- small up
+    Vector3.new(0, -1 / 2, 0), -- small down
 
-local function BuildBasis(dir)
-    local p = dir:Cross(v3(0, 1, 0))
-    if p.Magnitude < 1e-3 then p = dir:Cross(v3(1, 0, 0)) end
-    p = p.Unit
-    local q = dir:Cross(p).Unit
-    return p, q
-end
+    Vector3.new(1 / 2, 1 / 2, 0), -- small right up
+    Vector3.new(1 / 2, -1 / 2, 0), -- small right down
+    Vector3.new(-1 / 2, 1 / 2, 0), -- small left up
+    Vector3.new(-1 / 2, -1 / 2, 0), -- small left down
+    Vector3.new(0, 1 / 2, 1 / 2), -- small forward up
+    Vector3.new(0, -1 / 2, 1 / 2), -- small forward down
+    Vector3.new(0, 1 / 2, -1 / 2), -- small backward up
+    Vector3.new(0, -1 / 2, -1 / 2), -- small backward down
+}
 
-local function FindBestOrigin5(headPos, targetPos, Character, TargetCharacter)
-    local rp = GetRayParamsForPair(Character, TargetCharacter)
-    local dvec = targetPos - headPos
-    local dist = dvec.Magnitude
-    if dist < 1e-3 then return headPos end
-    local dir = dvec.Unit
-    local p, q = BuildBasis(dir)
-
-    local priorityOffsets = {
-        dir * ORIGIN_RADIUS,        -- forward
-        -dir * ORIGIN_RADIUS,       -- back
-        p * ORIGIN_RADIUS,          -- right
-        -p * ORIGIN_RADIUS,         -- left
-        q * ORIGIN_RADIUS,          -- up
-        -q * ORIGIN_RADIUS,         -- down
-        (p + q).Unit * ORIGIN_RADIUS,
-        (p - q).Unit * ORIGIN_RADIUS,
-        (-p + q).Unit * ORIGIN_RADIUS,
-        (-p - q).Unit * ORIGIN_RADIUS
-    }
-
-    for i = 1, #priorityOffsets do
-        if not CanUseRaycast(1) then break end
-        local origin = headPos + priorityOffsets[i]
-        if StrictWallCheckParams(origin, targetPos, rp, TargetCharacter) then
-            return origin
+local function GetManipPos(origin_pos, targetpart, range, MyChar, TargetChar)
+    local final, maxmag = nil, math.huge
+    for _, direction in ipairs(vectors) do
+        local curvector = direction * range
+        local modified = origin_pos + curvector
+        if MultiPointWallCheck(modified, targetpart.Position, MyChar, TargetChar) then
+            if curvector.Magnitude <= maxmag then
+                final = modified
+                maxmag = curvector.Magnitude
+            end
         end
     end
-
-    local count = 48
-    for i = 1, count do
-        if not CanUseRaycast(1) then break end
-        local y = 1 - ((i - 0.5) / count) * 2
-        local r = math.sqrt(max(0, 1 - y * y))
-        local theta = GOLDEN * i
-        local x = r * math.cos(theta)
-        local z = r * math.sin(theta)
-        local offset = v3(x, y, z) * ORIGIN_RADIUS
-        local origin = headPos + offset
-        if StrictWallCheckParams(origin, targetPos, rp, TargetCharacter) then
-            return origin
-        end
-    end
-    return headPos
+    return final
 end
 
-local function ShootTarget(Target)
-    if not Target then return end
-    local Character = LocalPlayer.Character
-    if not Character then return end
-    local MyHead = Character:FindFirstChild("Head")
+local function FireARemote(Ping, Dt)
+    if not Settings.Ragebot then return end
+
+    if not CheckHitChance() then
+        return
+    end
+
+    local MyChar = LocalPlayer.Character
+    if not MyChar then return end
+    local MyHead = MyChar:FindFirstChild("Head")
     if not MyHead then return end
-    local Tool = Character:FindFirstChildOfClass("Tool")
-    if not Tool then return end
-    local Remotes = Tool:FindFirstChild("Remotes")
-    local FireShot = Remotes and Remotes:FindFirstChild("FireShot")
-    if not FireShot then return end
+    local MyHeadPos = MyHead.Position
 
-    local bestOrigin = FindBestOrigin5(MyHead.Position, Target.WorldPos, Character, Target.Character)
-    local Direction = (Target.WorldPos - bestOrigin).Unit
-    pcall(function()
-        FireShot:FireServer(bestOrigin, Direction, Target.Part)
-    end)
+    local Targ, HitPart = GetBestTarget(Ping, Dt)
+    if not Targ or not HitPart then return end
+
+    local ToolData = GetToolComponents()
+    if not ToolData or not ToolData.FireShot then return end
+
+    local HitPos = (Settings.Prediction and Prediction(HitPart, Ping, Dt)) or HitPart.Position
+
+    if Settings.Manipulation then
+        local range = Settings.ManipulationRange or 4
+        local BestPoint = GetManipPos(MyHeadPos, HitPart, range, MyChar, Targ.Character)
+        if not BestPoint then return end
+        local AimDir = (HitPos - BestPoint).Unit
+        ToolData.FireShot:FireServer(BestPoint, AimDir, HitPart)
+    else
+        local AimDir = (HitPos - MyHeadPos).Unit
+        ToolData.FireShot:FireServer(MyHeadPos, AimDir, HitPart)
+    end
 end
 
-RunService.Heartbeat:Connect(function(dt)
-    if not RagebotEnabled or not AutoshootEnabled then return end
-    local ping = Stats.PerformanceStats.Ping:GetValue()
-    local Target = SelectTarget(dt, ping)
-    ShootTarget(Target)
+local PingStat = Stats.PerformanceStats.Ping
+
+task.spawn(function()
+    while true do
+        local Dt = RunService.Heartbeat:Wait()
+        if Settings.Ragebot then
+            local Ping = PingStat:GetValue() / 1000
+            FireARemote(Ping, Dt)
+        end
+    end
 end)
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/smi9/LinoriaLib/main/Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/smi9/LinoriaLib/main/addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/smi9/LinoriaLib/main/addons/SaveManager.lua"))()
+local repo = 'https://raw.githubusercontent.com/smi9/LinoriaLib/main/'
+local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local Window = Library:CreateWindow({
     Title = 'skibidi.hook | Mirage HvH',
-    Center = true, AutoShow = true, TabPadding = 8, MenuFadeTime = 0
+    Center = true, AutoShow = true,
 })
 local Tabs = {
     Combat = Window:AddTab('Combat'),
-    UISettings = Window:AddTab('UI Settings')
+    UISettings = Window:AddTab('UI Settings'),
 }
-local RageMain = Tabs.Combat:AddLeftGroupbox('Rage Bot')
-RageMain:AddToggle('RageEnabled', {Text='Master Toggle',Default=RagebotEnabled}):OnChanged(function(val) RagebotEnabled=val end)
-RageMain:AddToggle('AutoShoot', {Text='Auto Shoot',Default=AutoshootEnabled}):OnChanged(function(val) AutoshootEnabled=val end)
-RageMain:AddSlider('ShootDelay', {Text='Shoot Delay',Default=ShootDelay,Min=0.00,Max=1.0, Rounding=2}):OnChanged(function(val) ShootDelay=val end)
-RageMain:AddSlider('Hitchance', {Text='Hitchance (%)',Default=Hitchance,Min=1,Max=100,Rounding=0}):OnChanged(function(val) Hitchance=val end)
-RageMain:AddSlider('MinDamage', {Text='MinDamage',Default=MinDamage,Min=1,Max=80,Rounding=0}):OnChanged(function(val) MinDamage=val end)
+local RagebotGB = Tabs.Combat:AddLeftGroupbox('Ragebot')
 
-local AntiAimMain = Tabs.Combat:AddLeftGroupbox('Anti Aim')
-AntiAimMain:AddToggle('AntiAimEnabled', {
-    Text = 'Master Toggle',
+RagebotGB:AddToggle('RagebotToggle', {
+    Text = 'Master Toggle', Default = Settings.Ragebot,
+    Callback = function(val) Settings.Ragebot = val end
+})
+
+RagebotGB:AddToggle('ManipulationToggle', {
+    Text = 'Manipulation', Default = Settings.Manipulation,
+    Callback = function(val) Settings.Manipulation = val end
+})
+
+RagebotGB:AddSlider('ManipulationRange', {
+    Text = 'Manipulation Range',
+    Default = Settings.ManipulationRange,
+    Min = 0, Max = 10, Rounding = 1,
+    Callback = function(val) Settings.ManipulationRange = val end
+})
+
+RagebotGB:AddToggle('PredictionToggle', {
+    Text = 'Prediction', Default = Settings.Prediction,
+    Callback = function(val) Settings.Prediction = val end
+})
+
+RagebotGB:AddSlider('FovSlider', {
+    Text = 'FOV', Default = Settings.Fov, Min = 1, Max = 360,
+    Rounding = 0,
+    Callback = function(val) Settings.Fov = val end
+})
+
+RagebotGB:AddSlider('MinDamageSlider', {
+    Text = 'Min Damage', Default = Settings.MinDamage, Min = 1, Max = 99,
+    Rounding = 0,
+    Callback = function(val) Settings.MinDamage = val end
+})
+
+RagebotGB:AddSlider('HitChanceSlider', {
+    Text = 'Hit Chance (%)', Default = Settings.HitChance, Min = 1, Max = 100,
+    Rounding = 0,
+    Callback = function(val) Settings.HitChance = val end
+})
+
+RagebotGB:AddToggle('BAimToggle', {
+    Text = 'Body Aim', Default = Settings.BAim,
+    Callback = function(val) Settings.BAim = val end
+})
+RagebotGB:AddToggle('PrioritizeHeadToggle', {
+    Text = 'Prioritize Head', Default = Settings.PrioritizeHead,
+    Callback = function(val) Settings.PrioritizeHead = val end
+})
+RagebotGB:AddToggle('PrioritizeLegsToggle', {
+    Text = 'Prioritize Legs', Default = Settings.PrioritizeLegs,
+    Callback = function(val) Settings.PrioritizeLegs = val end
+})
+
+local AutomationGB = Tabs.Combat:AddRightGroupbox('Automation')
+
+local PeekToggle = AutomationGB:AddToggle('PeekAssist', {
+    Text = 'Peek Assist',
     Default = false,
 })
-AntiAimMain:AddDropdown('AntiAimYawMode', {
-    Values = {'Off', 'Static Left', 'Static Right', 'Jitter', 'Spinbot', '180 Flick', 'Random', 'Slow Spin', 'Sway'},
-    Default = 'Off',
-    Text = 'Yaw Mode',
+
+:AddKeyPicker('PeekKey', {
+    Default = 'X',
+    SyncToggleState = false,
+    Mode = 'Hold',
+    NoUI = false,
+    Text = 'Peek Key',
+    Callback = function(active)
+        if not Toggles.PeekAssist.Value then return end
+
+        local char = game:GetService("Players").LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if active then
+            if not Peek.Position then
+                local cf = hrp.CFrame
+                if Peek.Position and (cf.Position - Peek.Position.Position).Magnitude < 0.1 then
+                    Library:Notify("already marked here.", 2)
+                    return
+                end
+                if Peek.Marker then Peek.Marker:Destroy() end
+                local part = Instance.new("Part")
+                part.Anchored = true
+                part.CanCollide = false
+                part.Transparency = 0.3
+                part.BrickColor = BrickColor.new("Hot pink")
+                part.Size = Vector3.new(2, 0.2, 2)
+                part.CFrame = cf
+                part.Parent = workspace
+                Peek.Marker = part
+                Peek.Position = cf
+                Library:Notify("peek position stored. Press again to teleport back.", 2)
+            else
+                local dist = (Peek.Position.Position - hrp.Position).Magnitude
+                if dist > Peek.MaxDistance then
+                    if Peek.Marker then Peek.Marker:Destroy() end
+                    Peek.Position = nil
+                    Library:Notify("too far from stored peek (limit 15)!", 2)
+                    return
+                end
+                hrp.CFrame = Peek.Position
+                Library:Notify("peek teleport!", 1)
+                if Peek.Marker then Peek.Marker:Destroy() Peek.Marker = nil end
+                Peek.Position = nil
+            end
+        end
+    end,
+    ChangedCallback = function(newKey, newMode)
+        Library:Notify(("peek assist key set to [%s], mode: [%s]"):format(newKey, newMode or Options.PeekKey.Mode), 2)
+    end
 })
+
+PeekToggle:OnChanged(function(value)
+    if not value then
+        if Peek.Marker then Peek.Marker:Destroy() Peek.Marker = nil end
+        Peek.Position = nil
+    end
+end)
 
 local MenuGroupbox = Tabs.UISettings:AddLeftGroupbox('Menu')
 MenuGroupbox:AddButton('Unload UI', function()
 	Library:Unload()
 end)
+MenuGroupbox:AddToggle('SilentLoadToggle', {
+    Text = 'Silent Mode',
+    Default = getgenv().SilentLoad or false,
+    Callback = function(value)
+        getgenv().SilentLoad = value
+        Window.Holder.Visible = not value
+        Library.KeybindFrame.Visible = not value
+        if Library.Watermark then Library.Watermark.Visible = not value end
+    end
+})
 MenuGroupbox:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
 	Default = 'RightShift',
 	NoUI = true,
@@ -421,105 +593,43 @@ MenuGroupbox:AddDropdown('KeybindMenuValue', {
 		Library.KeypickerListMode = value
 	end
 })
+local FrameTimer, FrameCounter, FPS = tick(), 0, 60
 
-local CurrentYaw = 0
-local JitterSide = 1
-local flickTimer = 0
-local swayDir = 1
-local swayYaw = 0
-local AntiAimConnection = nil
-local FlickInterval = 0.25
-
-local function ApplyAntiAim()
-    if not Toggles.AntiAimEnabled.Value then
-        if AntiAimConnection then
-            AntiAimConnection:Disconnect()
-            AntiAimConnection = nil
-        end
-        local char = LocalPlayer.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.CFrame = CFrame_new(hrp.Position)
-            end
-        end
-        return
-    end
-
-    if not AntiAimConnection then
-        AntiAimConnection = RunService.RenderStepped:Connect(function(dt)
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-
-            local mode = Options.AntiAimYawMode.Value or 'Off'
-            local base = CFrame_new(hrp.Position)
-            if mode == "Off" then
-                hrp.CFrame = base
-                return
-            end
-            if mode == "Force Left" then
-                hrp.CFrame = base * CFrame_Angles(0, rad(-90), 0)
-            elseif mode == "Force Right" then
-                hrp.CFrame = base * CFrame_Angles(0, rad(90), 0)
-            elseif mode == "Jitter" then
-                JitterSide = -JitterSide
-                hrp.CFrame = base * CFrame_Angles(0, rad(130 * JitterSide), 0)
-            elseif mode == "Spinbot" then
-                CurrentYaw = (CurrentYaw + dt * 2500) % 360
-                hrp.CFrame = base * CFrame_Angles(0, rad(CurrentYaw), 0)
-            elseif mode == "180 Flick" then
-                flickTimer = (flickTimer or 0) + dt
-                if flickTimer >= FlickInterval then
-                    CurrentYaw = (CurrentYaw + 180) % 360
-                    flickTimer = 0
-                end
-                hrp.CFrame = base * CFrame_Angles(0, rad(CurrentYaw), 0)
-            elseif mode == "Random" then
-                hrp.CFrame = base * CFrame_Angles(0, rad(RandomGen:NextInteger(0,359)), 0)
-            elseif mode == "Slow Spin" then
-                CurrentYaw = (CurrentYaw + dt * 120) % 360
-                hrp.CFrame = base * CFrame_Angles(0, rad(CurrentYaw), 0)
-            elseif mode == "Sway" then
-                swayYaw = swayYaw + (dt * 90 * swayDir)
-                if math.abs(swayYaw) > 90 then
-                    swayDir = -swayDir
-                    swayYaw = clamp(swayYaw, -90, 90)
-                end
-                hrp.CFrame = base * CFrame_Angles(0, rad(swayYaw), 0)
-            end
-        end)
+local function get_ping()
+    local ok, ping = pcall(function()
+        return Stats:FindFirstChild("Network") and Stats.Network:FindFirstChild("ServerStatsItem")
+               and Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+    if ok and ping then
+        return math.floor(ping)
+    else
+        return 0
     end
 end
+local WatermarkConnection = RunService.RenderStepped:Connect(function()
+    FrameCounter = FrameCounter + 1
+    if (tick() - FrameTimer) >= 1 then
+        FPS = FrameCounter
+        FrameCounter = 0
+        FrameTimer = tick()
+    end
 
-Toggles.AntiAimEnabled:OnChanged(ApplyAntiAim)
-Options.AntiAimYawMode:OnChanged(ApplyAntiAim)
+    local ping = get_ping()
+    local watermarkText = string.format("skibidi.hook | %d ms | %d fps | %s (%d)", ping, FPS, LocalPlayer.Name, LocalPlayer.UserId)
+    Library:SetWatermark(watermarkText)
+end)
+
+Library:SetWatermarkVisibility(false)
+Library:OnUnload(function()
+    WatermarkConnection:Disconnect()
+end)
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
-ThemeManager:ApplyToTab(Tabs.UISettings)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+SaveManager:SetFolder('skibidihook')
+ThemeManager:SetFolder('skibidihook/MirageHvH')
 SaveManager:BuildConfigSection(Tabs.UISettings)
+ThemeManager:ApplyToTab(Tabs.UISettings)
 SaveManager:LoadAutoloadConfig()
-Library:SetWatermarkVisibility(true)
-local lastWatermark = 0
-local cachedWatermark = ""
-local FrameTimer = os.clock()
-local FrameCounter = 0
-local FPS = 60
-RunService.RenderStepped:Connect(function(dt)
-    local now = os.clock()
-    FrameCounter += 1
-    if (now - FrameTimer) >= 1 then
-        FPS = FrameCounter
-        FrameTimer = now
-        FrameCounter = 0
-    end
-    if (now - lastWatermark) >= 0.1 then
-        lastWatermark = now
-        cachedWatermark = ('skibidi.hook | %s fps | %s ms'):format(
-            floor(FPS), floor(Stats.Network.ServerStatsItem['Data Ping']:GetValue())
-        )
-        Library:SetWatermark(cachedWatermark)
-    end
-end)
