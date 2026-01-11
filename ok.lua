@@ -17,7 +17,7 @@ local LocalPlayer = Players.LocalPlayer
 local Settings = {
     Ragebot = true,
     Manipulation = true,
-    ManipulationRange = 2,
+    ManipulationRange = 10,
     Prediction = true,
     Fov = 360,
     MinDamage = 80,
@@ -44,6 +44,9 @@ local Peek = {
     Storing = true,
 }
 
+local Speed = false
+local SpeedAmount = 30
+local Bhop = false
 
 local Rand = Random.new()
 
@@ -140,38 +143,42 @@ local function CheckHitChance()
 end
 
 local function StrictWallCheck(StartPos, EndPos, MyChar, TargetChar)
-    if not (StartPos and EndPos and MyChar and TargetChar) then
+    if typeof(StartPos) ~= "Vector3" or typeof(EndPos) ~= "Vector3" then
         return false
     end
-
+    if not (MyChar and TargetChar) then
+        return false
+    end
     RayIgnore[1] = MyChar
     RayParams.FilterDescendantsInstances = RayIgnore
 
     local CurStart = StartPos
-    local MaxHops = 8
+    local MaxHops = 12
 
     for _ = 1, MaxHops do
         local Dir = EndPos - CurStart
         local Mag = Dir.Magnitude
+
         if Mag < 0.1 then
             return true
         end
-        if Mag > 1000 then
+        if Mag > 5000 then
             return false
         end
-
-        local Hit = Workspace:Raycast(CurStart, Dir, RayParams)
-        if not Hit then
+        local hit = Workspace:Raycast(CurStart, Dir, RayParams)
+        if not hit then
             return true
         end
 
-        local Inst = Hit.Instance
-        if Inst and Inst:IsDescendantOf(TargetChar) then
+        local inst = hit.Instance
+        if not inst then
             return true
         end
-
-        if CanPenetrate(Inst) or IsCharacterPart(Inst) then
-            CurStart = Hit.Position + Dir.Unit * 0.1
+        if inst:IsDescendantOf(TargetChar) then
+            return true
+        end
+        if CanPenetrate(inst) or IsCharacterPart(inst) then
+            CurStart = hit.Position + Dir.Unit * 0.15
         else
             return false
         end
@@ -358,18 +365,45 @@ local vectors = {
     Vector3.new(0, -1 / 2, -1 / 2), -- small backward down
 }
 
-local function GetManipPos(origin_pos, targetpart, range, MyChar, TargetChar)
-    local final, maxmag = nil, math.huge
+local function GetManipPos(origin_pos, targetpart, range, MyChar, TargetChar, basisCFrame)
+    if typeof(origin_pos) ~= "Vector3" then
+        return nil
+    end
+    if typeof(range) ~= "number" then
+        return nil
+    end
+    if typeof(targetpart) ~= "Instance" or not targetpart:IsA("BasePart") then
+        return nil
+    end
+    if not (MyChar and TargetChar) then
+        return nil
+    end
+
+    basisCFrame = basisCFrame or CFrame.new(origin_pos, targetpart.Position)
+
+    local final, bestMag = nil, math.huge
+
     for _, direction in ipairs(vectors) do
-        local curvector = direction * range
-        local modified = origin_pos + curvector
+        if direction.Magnitude == 0 then
+            continue
+        end
+        local worldDir =
+            (basisCFrame.RightVector * direction.X) +
+            (basisCFrame.UpVector    * direction.Y) +
+            (basisCFrame.LookVector  * direction.Z)
+
+        local offset = worldDir * range
+        local modified = origin_pos + offset
+
         if MultiPointWallCheck(modified, targetpart.Position, MyChar, TargetChar) then
-            if curvector.Magnitude <= maxmag then
+            local mag = offset.Magnitude
+            if mag <= bestMag then
                 final = modified
-                maxmag = curvector.Magnitude
+                bestMag = mag
             end
         end
     end
+
     return final
 end
 
@@ -418,6 +452,29 @@ task.spawn(function()
     end
 end)
 
+RunService.RenderStepped:Connect(function()
+    local Character = LocalPlayer.Character
+    if not Character then return end
+
+    local HRP = Character:FindFirstChild("HumanoidRootPart")
+    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    if not HRP or not Humanoid then return end
+
+    if Bhop then
+        local State = Humanoid:GetState()
+        if (State == Enum.HumanoidStateType.Jumping 
+            or State == Enum.HumanoidStateType.Freefall 
+            or State == Enum.HumanoidStateType.Landed) 
+            and Humanoid.MoveDirection.Magnitude > 0 then
+            HRP.Velocity = Humanoid.MoveDirection * SpeedAmount + Vector3.new(0, HRP.Velocity.Y, 0)
+        end
+    elseif Speed then
+        if Humanoid.MoveDirection.Magnitude > 0 then
+            HRP.Velocity = Humanoid.MoveDirection * SpeedAmount + Vector3.new(0, HRP.Velocity.Y, 0)
+        end
+    end
+end)
+
 local repo = 'https://raw.githubusercontent.com/smi9/LinoriaLib/main/'
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -446,7 +503,7 @@ RagebotGB:AddToggle('ManipulationToggle', {
 RagebotGB:AddSlider('ManipulationRange', {
     Text = 'Manipulation Range',
     Default = Settings.ManipulationRange,
-    Min = 0, Max = 10, Rounding = 1,
+    Min = 1, Max = 7, Rounding = 0,
     Callback = function(val) Settings.ManipulationRange = val end
 })
 
@@ -487,59 +544,6 @@ RagebotGB:AddToggle('PrioritizeLegsToggle', {
 })
 
 local AutomationGB = Tabs.Combat:AddRightGroupbox('Automation')
-
-local PeekToggle = AutomationGB:AddToggle('PeekAssist', {
-    Text = 'Peek Assist',
-    Default = false,
-})
-
-:AddKeyPicker('Peek Assist Key', {
-    Default = 'X',
-    SyncToggleState = false,
-    Mode = 'Hold',
-    NoUI = false,
-    Text = 'Peek Assist',
-    Callback = function(active)
-        if not Toggles.PeekAssist.Value then return end
-
-        local char = game:GetService("Players").LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        if active then
-            if not Peek.Position then
-                local cf = hrp.CFrame
-                if Peek.Position and (cf.Position - Peek.Position.Position).Magnitude < 0.1 then
-                    Library:Notify("already marked here.", 2)
-                    return
-                end
-                if Peek.Marker then Peek.Marker:Destroy() end
-                local part = Instance.new("Part")
-                part.Anchored = true
-                part.CanCollide = false
-                part.Transparency = 0.3
-                part.BrickColor = BrickColor.new("Hot pink")
-                part.Size = Vector3.new(2, 0.2, 2)
-                part.CFrame = cf
-                part.Parent = workspace
-                Peek.Marker = part
-                Peek.Position = cf
-                Library:Notify("peek position stored. Press again to teleport back.", 2)
-            else
-                local dist = (Peek.Position.Position - hrp.Position).Magnitude
-                if dist > Peek.MaxDistance then
-                    if Peek.Marker then Peek.Marker:Destroy() end
-                    Peek.Position = nil
-                    Library:Notify("too far from stored peek (limit 15)!", 2)
-                    return
-                end
-                hrp.CFrame = Peek.Position
-                Library:Notify("peek teleport!", 1)
-                if Peek.Marker then Peek.Marker:Destroy() Peek.Marker = nil end
-                Peek.Position = nil
-            end
-        end
-    end,
-})
 
 AutomationGB:AddToggle('AlwaysCrouchToggle', {
     Text = 'Always Crouch',
@@ -615,11 +619,30 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
-PeekToggle:OnChanged(function(value)
-    if not value then
-        if Peek.Marker then Peek.Marker:Destroy() Peek.Marker = nil end
-        Peek.Position = nil
-    end
+local MovementGB = Tabs.Combat:AddLeftGroupbox('Movement')
+
+MovementGB:AddToggle('Speed', {
+    Text = 'Speed',
+    Default = Speed
+}):OnChanged(function(val)
+    Speed = val
+end)
+
+MovementGB:AddSlider('SpeedAmount', {
+    Text = 'Speed Amount',
+    Default = SpeedAmount,
+    Min = 16,
+    Max = 30,
+    Rounding = 0,
+}):OnChanged(function(val)
+    SpeedAmount = val
+end)
+
+MovementGB:AddToggle('Bhop', {
+    Text = 'Bhop',
+    Default = Bhop
+}):OnChanged(function(val)
+    Bhop = val
 end)
 
 local MenuGroupbox = Tabs.UISettings:AddLeftGroupbox('Menu')
