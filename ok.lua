@@ -32,7 +32,9 @@ local Settings = {
         ["LeftUpperLeg"] = 0.6,
         ["RightUpperLeg"] = 0.6,
         HumanoidRootPart = 1
-    }
+    },
+    AlwaysCrouch = false,
+    CrouchWalkAnimId = "rbxassetid://124458965304788",
 }
 
 local Peek = {
@@ -538,6 +540,80 @@ local PeekToggle = AutomationGB:AddToggle('PeekAssist', {
         end
     end,
 })
+
+AutomationGB:AddToggle('AlwaysCrouchToggle', {
+    Text = 'Always Crouch',
+    Default = Settings.AlwaysCrouch,
+    Callback = function(val) Settings.AlwaysCrouch = val end
+})
+
+Settings.CrouchWalkAnimId = "rbxassetid://124458965304788"
+local LastCrouchTrack = nil
+
+local function ForceCrouch()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = humanoid
+    end
+
+    if LastCrouchTrack and LastCrouchTrack.IsPlaying then return end
+
+    local anim = Instance.new("Animation")
+    anim.AnimationId = Settings.CrouchWalkAnimId
+    LastCrouchTrack = animator:LoadAnimation(anim)
+    LastCrouchTrack.Priority = Enum.AnimationPriority.Action
+    LastCrouchTrack:Play()
+
+    humanoid.WalkSpeed = 25
+    humanoid.JumpPower = 40
+end
+
+local function RemoveCrouch()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    humanoid.WalkSpeed = 25
+    humanoid.JumpPower = 30
+
+    if LastCrouchTrack and LastCrouchTrack.IsPlaying then
+        LastCrouchTrack:Stop()
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait()
+        if Settings.AlwaysCrouch then
+            ForceCrouch()
+        else
+            RemoveCrouch()
+        end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    LastCrouchTrack = nil
+    if Settings.AlwaysCrouch then
+        local character = LocalPlayer.Character
+        local tries = 0
+        repeat
+            task.wait(0.1)
+            tries += 1
+        until (character and character:FindFirstChildOfClass("Humanoid") 
+            and character:FindFirstChildOfClass("Humanoid"):FindFirstChildOfClass("Animator"))
+            or tries > 30
+
+        ForceCrouch()
+    end
+end)
 
 PeekToggle:OnChanged(function(value)
     if not value then
