@@ -537,9 +537,6 @@ local PeekToggle = AutomationGB:AddToggle('PeekAssist', {
             end
         end
     end,
-    ChangedCallback = function(newKey, newMode)
-        Library:Notify(("peek assist key set to [%s], mode: [%s]"):format(newKey, newMode or Options.PeekKey.Mode), 2)
-    end
 })
 
 PeekToggle:OnChanged(function(value)
