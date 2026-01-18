@@ -84,20 +84,19 @@ local function getService(name)
 end
 
 function Library:validate(defaults, options)
-		local opt_lc = {}
-		for k, v in pairs(options) do
-			opt_lc[string.lower(k)] = v
+	local opt_lc = {}
+	for k, v in pairs(options) do
+		opt_lc[string.lower(k)] = v
+	end
+	for i, v in pairs(defaults) do
+		local found = opt_lc[string.lower(i)]
+		if found == nil then
+			options[i] = v
+		else
+			options[i] = found
 		end
-		local out = {}
-		for i, v in pairs(defaults) do
-			local found = opt_lc[string.lower(i)]
-			if found == nil then
-				out[i] = v
-			else
-				out[i] = found
-			end
-		end
-	return out
+	end
+	return options
 end
 
 local players = getService('Players')
@@ -614,8 +613,9 @@ function Library:create(options)
 				
 				function Section:addToggle(options)
 					options = Library:validate({
-						title = "Toggle",
-						cb = function() end
+						title = options.Title or options.title or "Toggle",
+						state = options.State or options.state,
+						cb = options.Cb or options.Callback or options.cb or function() end
 					}, options or {})
 					
 					local Toggle = {
@@ -1095,12 +1095,12 @@ function Library:create(options)
 				
 				function Section:addSlider(options)
 					options = Library:validate({
-						title = "Slider",
-						min = 0,
-						max = 100,
-						default = 50,
-						slider_icon = "%",
-						cb = function(v) print(v) end
+						title = options.Title or options.title or "Slider",
+						min = options.Min or options.min or 0,
+						max = options.Max or options.max or 100,
+						default = options.Default or options.default or 50,
+						slider_icon = options.SliderIcon or options.slider_icon or "%",
+						cb = options.Cb or options.Callback or options.cb or function(v) print(v) end
 					}, options or {})
 					local Slider = {
 						MouseDown = false,
@@ -1239,9 +1239,9 @@ function Library:create(options)
 
 				function Section:addDropdown(options)
 					options = Library:validate({
-						title = 'Dropdown',
-						list = {},
-						cb = function() end
+						title = options.Title or options.title or 'Dropdown',
+						list = options.List or options.list or {},
+						cb = options.Cb or options.Callback or options.cb or function() end
 					}, options or {})
 					
 					local Dropdown = {
