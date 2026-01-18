@@ -84,19 +84,20 @@ local function getService(name)
 end
 
 function Library:validate(defaults, options)
-	local opt_lc = {}
-	for k, v in pairs(options) do
-		opt_lc[string.lower(k)] = v
-	end
-	for i, v in pairs(defaults) do
-		local found = opt_lc[string.lower(i)]
-		if found == nil then
-			options[i] = v
-		else
-			options[i] = found
+		local opt_lc = {}
+		for k, v in pairs(options) do
+			opt_lc[string.lower(k)] = v
 		end
-	end
-	return options
+		local out = {}
+		for i, v in pairs(defaults) do
+			local found = opt_lc[string.lower(i)]
+			if found == nil then
+				out[i] = v
+			else
+				out[i] = found
+			end
+		end
+	return out
 end
 
 local players = getService('Players')
