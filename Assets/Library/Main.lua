@@ -1,5 +1,5 @@
---// Design & Scripting by minerlover
-
+--// sigma x minerlover
+--// no steal or me no happy
 --// Variables & Constants
 
 cloneref = cloneref or function(i)
