@@ -33,6 +33,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local ScreenShakeLS = LocalPlayer.PlayerScripts:FindFirstChild("ScreenShake")
 
 local TeamCheck = true
 local SilentAim = false
@@ -43,6 +44,7 @@ local VisibleCheck = true
 local TargetBodyPart = "Head"
 
 local ModDetection = true
+local AntiScreenShake = true
 
 local ThirdPerson = false
 local ThirdPersonDistance = 10
@@ -53,7 +55,6 @@ local InfiniteMuzzleVelocity = false
 local FullAuto = false
 local RapidFire = false
 local FireRateValue = 6000
-local InstantEquip = false
 local CanShoot = false
 
 local SpeedHack = false
@@ -64,7 +65,6 @@ local Movement = {Forward = 0, Back = 0, Left = 0, Right = 0, Up = 0, Down = 0}
 local FlyConnection
 
 local SilentStep = false
-
 local Anti096Face = false
 
 local BridgeNet2 = require(ReplicatedStorage.Assets.Modules.BridgeNet2);
@@ -702,6 +702,16 @@ LocalGB:AddToggle('InfiniteStamina', {
     end
 })
 local ExtraGB = Tabs.Misc:AddLeftGroupbox('Extra')
+ExtraGB:AddToggle('AntiScreenShake', {
+    Text = 'Anti Screenshake',
+    Default = AntiScreenShake,
+    Callback = function(v)
+        AntiScreenShake = v
+        if ScreenShakeLS then
+            ScreenShakeLS.Disabled = v
+        end
+    end
+})
 ExtraGB:AddToggle('ModDetection', { 
     Text = 'Moderator Detection', 
     Default = ModDetection, 
