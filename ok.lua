@@ -44,7 +44,7 @@ local VisibleCheck = true
 local TargetBodyPart = "Head"
 
 local ModDetection = true
-local AntiScreenShake = true
+local AntiScreenShake = false
 
 local ThirdPerson = false
 local ThirdPersonDistance = 10
@@ -520,6 +520,49 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     Humanoid = char:WaitForChild("Humanoid")
     ApplySpeed()
 end)
+local NoclipActive = false
+local NoclipConnection = nil
+local NoclipRestoreParts = {}
+local function SetNoclip(state)
+    NoclipActive = state
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+        NoclipConnection = nil
+    end
+    local character = LocalPlayer.Character
+    if not character then return end
+    if state then
+        NoclipRestoreParts = {}
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                NoclipRestoreParts[#NoclipRestoreParts+1] = part
+                part.CanCollide = false
+            end
+        end
+        NoclipConnection = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if not NoclipActive or not char then 
+                if NoclipConnection then
+                    NoclipConnection:Disconnect()
+                    NoclipConnection = nil
+                end
+                return
+            end
+            for _, part in ipairs(NoclipRestoreParts) do
+                if part and part.Parent and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    else
+        for _, part in ipairs(NoclipRestoreParts) do
+            if part and part.Parent then
+                part.CanCollide = true
+            end
+        end
+        NoclipRestoreParts = {}
+    end
+end
 local repo = 'https://raw.githubusercontent.com/smi9/LinoriaLib/main/'
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -684,6 +727,23 @@ UserInputService.InputEnded:Connect(function(Input, Processed)
     if Input.KeyCode == Enum.KeyCode.D then Movement.Right = 0 end
     if Input.KeyCode == Enum.KeyCode.Space then Movement.Up = 0 end
     if Input.KeyCode == Enum.KeyCode.LeftControl then Movement.Down = 0 end
+end)
+MovementGB:AddToggle("Noclip", {
+    Text = "Noclip",
+    Default = false,
+    Callback = function(On)
+        SetNoclip(On)
+    end
+})
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if NoclipActive then
+        if NoclipConnection then
+            NoclipConnection:Disconnect()
+            NoclipConnection = nil
+        end
+        SetNoclip(true)
+    end
 end)
 local LocalGB = Tabs.Misc:AddLeftGroupbox('Local')
 LocalGB:AddToggle('ThirdPerson', { Text = 'Third Person', Default = ThirdPerson, Callback = function(v) ThirdPerson = v end })
