@@ -64,7 +64,6 @@ local FlySpeed = 60
 local Movement = {Forward = 0, Back = 0, Left = 0, Right = 0, Up = 0, Down = 0}
 local FlyConnection
 
-local SilentStep = false
 local Anti096Face = false
 
 local BridgeNet2 = require(ReplicatedStorage.Assets.Modules.BridgeNet2);
@@ -351,27 +350,8 @@ local OldNamecall; OldNamecall = hookmetamethod(game, "__namecall", function(sel
     end
     return OldNamecall(self, unpack(Arguments))
 end)
-
-for _, Func in pairs(getgc(true)) do
-    if typeof(Func) == "function" then
-        local Name = debug.info(Func, "n")
-        local Source = debug.info(Func, "s")
-        if Name == "PlayRandomSound" or (Source and Source:match("Footstep")) then
-            local OldFunc = Func
-            hookfunction(Func, function(V17, V18, V19)
-                if SilentStep and LocalPlayer and LocalPlayer.Character and V18 and V18:IsDescendantOf(LocalPlayer.Character) then
-                    return
-                end
-                return OldFunc(V17, V18, V19)
-            end)
-            break
-        end
-    end
-end
-
 local InfiniteStamina = false
 local StaminaConnection
-
 local function SetupInfiniteStamina()
     if InfiniteStamina and LocalPlayer.Character then
         task.wait(0.5)
@@ -389,7 +369,6 @@ local function SetupInfiniteStamina()
         end
     end
 end
-
 LocalPlayer.CharacterAdded:Connect(function(character)
     if InfiniteStamina then
         task.wait(1)
@@ -402,32 +381,26 @@ if LocalPlayer.Character and InfiniteStamina then
         SetupInfiniteStamina()
     end)
 end
-
 if not getgenv().oldf then
     getgenv().oldf = clonefunction(Remotes.fireWeapon.Fire)
 end
-
 if not getgenv().olda then
     getgenv().olda = clonefunction(Remotes.repHit.Fire)
 end
-
 local old = getgenv().oldf
 Remotes.fireWeapon.Fire = function(self, data, ...)
     data["arg1"] = Vector3.new(0/0,0/0,0/0)
     return old(self, data, ...)
 end
-
 if not getgenv().OldSCPHandlerFire then
     getgenv().OldSCPHandlerFire = Remotes.scpHandler.Fire
 end
-
 Remotes.scpHandler.Fire = function(self, data, ...)
     if Anti096Face and data and data.Arg == "SeenFace" then
         return
     end
     return getgenv().OldSCPHandlerFire(self, data, ...)
 end
-
 local function SetupWepStats()
     for _, conn in ipairs(getconnections(RunService.Heartbeat)) do
         local func = conn.Function
@@ -648,7 +621,7 @@ MovementGB:AddSlider('TargetSpeed', {
     Text = 'Speed',
     Default = TargetSpeed,
     Min = 1,
-    Max = 79,
+    Max = 89,
     Rounding = 0,
     Callback = function(v)
         TargetSpeed = v
@@ -703,7 +676,7 @@ MovementGB:AddSlider('FlySpeed', {
     Text = 'Fly Speed',
     Default = FlySpeed,
     Min = 1,
-    Max = 200,
+    Max = 64,
     Rounding = 0,
     Callback = function(v)
         FlySpeed = v
@@ -785,13 +758,6 @@ ExtraGB:AddToggle('ModDetection', {
     end
 })
 local ExploitsGB = Tabs.Misc:AddLeftGroupbox('Exploits')
-ExploitsGB:AddToggle('SilentStep', { 
-    Text = 'Silent Step', 
-    Default = SilentStep, 
-    Callback = function(v) 
-        SilentStep = v
-    end
-})
 ExploitsGB:AddToggle('Anti096Face', { 
     Text = 'Anti 096 Face', 
     Default = Anti096Face, 
