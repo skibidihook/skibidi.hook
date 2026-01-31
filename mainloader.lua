@@ -74,7 +74,7 @@ elseif (type(request) ~= 'function') then
 end;
 
 local placeID           = game.PlaceId;
-local GITHUB_REPO       = 'https://raw.githubusercontent.com/mainstreamed/amongus-hook/refs/heads/main/';
+local GITHUB_REPO       = 'https://raw.githubusercontent.com/skibidihook/skibidi.hook/refs/heads/main/';
 
 local supportedGames    = protectedLoad(`{GITHUB_REPO}supportedGames.lua`);
 local requiredIndexes   = { placeIDs = 'table'; executors = 'table'; customMessage = 'table' };
