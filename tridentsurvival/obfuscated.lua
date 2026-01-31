@@ -1,6 +1,23 @@
 if not game:IsLoaded() then
     game.Loaded:Wait();
 end;
+if not LPH_OBFUSCATED then
+    function LPH_ENCFUNC(f, encKey, decKey) return f end
+    function LPH_ENCSTR(s) return s end
+    function LPH_ENCNUM(n) return n end
+    function LPH_CRASH() (nil)() end
+    function LPH_JIT(f) return f end
+    function LPH_JIT_MAX(f) return f end
+    function LPH_NO_VIRTUALIZE(f) return f end
+    function LPH_NO_UPVALUES(f) return f end
+    LPH_OBFUSCATED = false
+    LPH_LINE = 0
+    LRM_IsUserPremium = true
+    LRM_ScriptName = 'ScriptName'
+    LRM_TotalExecutions = 0
+    LRM_SecondsLeft = 999999
+    LRM_UserNote = 'UserNote'
+end
 local kickPlayerFunction = LPH_NO_VIRTUALIZE(function(index)
     local playersService = game:GetService("Players");
     if not playersService.LocalPlayer then
