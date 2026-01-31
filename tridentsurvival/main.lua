@@ -5,9 +5,7 @@ if (not localplayer) then
       localplayer = players.LocalPlayer;
 end;
 
-local GITHUB_REPO = 'https://raw.githubusercontent.com/skibidihook/skibidi.hook/refs/heads/main/';
-
-local source = game:HttpGet(`{GITHUB_REPO}tridentsurvival/obfuscated.lua`);
+local source = game:HttpGet(`https://raw.githubusercontent.com/skibidihook/skibidi.hook/refs/heads/main/tridentsurvival/obfuscated.lua`);
 if (getgenv and getgenv().DEBUG_AMGHOOK) then
       source = `getgenv().DEBUG_AMGHOOK = true;\n{source}`;
 end;
@@ -25,7 +23,6 @@ source = string.format([==[
       end;
       
 ]==], drawingActorFix) .. source;
-print("were now on this part")
 -- Main Load
 local fastflag = getfflag and getfflag('DebugRunParallelLuaOnMainThread');
 if (fastflag == 'true' or fastflag == 'True' or fastflag == true) then
