@@ -25,7 +25,7 @@ source = string.format([==[
       end;
       
 ]==], drawingActorFix) .. source;
-
+print("were now on this part")
 -- Main Load
 local fastflag = getfflag and getfflag('DebugRunParallelLuaOnMainThread');
 if (fastflag == 'true' or fastflag == 'True' or fastflag == true) then

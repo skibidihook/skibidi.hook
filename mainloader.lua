@@ -46,6 +46,8 @@ local protectedMessagebox = function(body, title, id)
 	return;
 end;
 
+print("amongus sus")
+
 local protectedLoad = function(url, ...)
 	local success, response = pcall(request, {Url=url; Method='GET';});
 	if (not success) then
