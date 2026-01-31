@@ -74,10 +74,10 @@ if (type(loadstring) ~= 'function') then
 elseif (type(request) ~= 'function') then
 	return protectedMessagebox(`missing alias ( request ) - unsupported executor`, `amongus.hook [{executor}]`, 48);
 end;
-
+print("amongus sus")
 local placeID           = game.PlaceId;
 local GITHUB_REPO       = 'https://raw.githubusercontent.com/skibidihook/skibidi.hook/refs/heads/main/';
-
+print("amongus sus")
 local supportedGames    = protectedLoad(`{GITHUB_REPO}supportedGames.lua`);
 local requiredIndexes   = { placeIDs = 'table'; executors = 'table'; customMessage = 'table' };
 
@@ -92,7 +92,7 @@ local runOnGame = function( gameInfo )
                   return false;
             end;
       end;
-
+print("amongus sus")
       -- actual loader
       if (not table.find(gameInfo.placeIDs, placeID)) then -- identifying game
             return false;
@@ -117,5 +117,6 @@ for _, gameInfo in supportedGames do
             return;
       end;
 end;
-
+print("amongus sus")
 protectedMessagebox(`This Game is Unsupported!\n\nIf you believe this is incorrect, please create a bug-report in our discord! - discord.gg/2jycAcKvdw`, `amongus.hook [{placeID}]`, 48);
+print("amongus sus")
