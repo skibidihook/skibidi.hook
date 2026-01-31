@@ -92,7 +92,7 @@ local runOnGame = function( gameInfo )
                   return false;
             end;
       end;
-print("amongus sus")
+      print("amongus sus")
       -- actual loader
       if (not table.find(gameInfo.placeIDs, placeID)) then -- identifying game
             return false;
@@ -117,6 +117,4 @@ for _, gameInfo in supportedGames do
             return;
       end;
 end;
-print("amongus sus")
-protectedMessagebox(`This Game is Unsupported!\n\nIf you believe this is incorrect, please create a bug-report in our discord! - discord.gg/2jycAcKvdw`, `amongus.hook [{placeID}]`, 48);
 print("amongus sus")
