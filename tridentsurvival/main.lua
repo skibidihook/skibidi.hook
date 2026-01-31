@@ -13,7 +13,7 @@ if (getgenv and getgenv().DEBUG_AMGHOOK) then
 end;
 
 -- Drawing Fix ( FUCK VOLCANO )
-local drawingActorFix = loadstring(game:HttpGet(`{GITHUB_REPO}assets/trident/actorDrawingFix.lua`))();
+local drawingActorFix = loadstring(game:HttpGet(`{GITHUB_REPO}assets/trident/drawingfix.lua`))();
 
 source = string.format([==[
       if (not Drawing) then
